@@ -3,13 +3,14 @@ import re
 import logging
 import argparse
 import sys
+import json
 from dotenv import load_dotenv
 
 from bioconductor_repo import download_and_extract_package_names, clone_repo, directory_contents, remove_directory
 from utils import push_entry, connect_db, add_metadata_to_entry
 
 
-def parse_authors(authors_str):
+def parse_authors_r(authors_str):
     '''
     Parse the authors string into a list of dictionaries.
     The authors string is a string with the following format:
@@ -38,6 +39,72 @@ def parse_authors(authors_str):
         if orcid:
             author_info["orcid"] = orcid
         authors.append(author_info)
+
+    return authors
+
+
+def parse_authors_complex(authors_str):
+
+    # Now process individual authors and emails
+    # Normalize separators by replacing "and" with a comma for consistency
+    # Assuming "and" is not part of any names or email addresses
+    normalized_str = re.sub(r'\sand\s', ', ', authors_str)
+    authors_list = re.split(r',\s*', normalized_str)
+    parsed_authors = []
+
+    for author in authors_list:
+        #count terms 
+        l = len(author.split(' '))
+        # if there is an email
+        if '@' in author:
+            # only an email, no name
+            if l==1:
+                # Directly parse the author with an email
+                parsed_authors.append({"email": author})
+            # name and email
+            else:
+                if '<' in author:
+                    name, email = author.split('<')
+                    parsed_authors.append({"name": name.strip(), "email": email[:-1]})
+                # email not in <>
+                else:
+                    name = ''
+                    email = ''
+                    for item in author.split(' '):
+                        if '@' in item:
+                            email = item
+                        else:
+                            name += item + ' '
+                    parsed_authors.append({"name": name.strip(), "email": email})
+        else:
+            # For names without an explicit email, use the domain
+            parsed_authors.append({"name": author})
+
+
+    return parsed_authors
+
+
+def parse_authors_simple(authors_str):
+    # Normalize separators by replacing "and" with a comma for consistency
+    # Assuming "and" is not part of any names or email addresses
+    normalized_str = re.sub(r'\sand\s', ', ', authors_str)
+
+    # Split authors by comma or semicolon, accounting for potential spaces around separators
+    author_entries = re.split(r'\s*[,;]\s*', normalized_str)
+
+    authors = []
+    for entry in author_entries:
+        # Match the name and optional email pattern
+        match = re.match(r'(.+?)(?:\s*<([^>]+)>)?$', entry)
+        if match:
+            name, email = match.groups()
+            author_info = {"name": name.strip()}
+            if email:
+                author_info["email"] = email
+            authors.append(author_info)
+        else:
+            # Handle the case where the entry does not match the expected pattern
+            authors.append({"name": entry.strip()})
 
     return authors
 
@@ -106,9 +173,13 @@ def parse_metadata(metadata):
     metadata_dict = build_dictionary(metadata)
     # Parse authors
     if "Authors@R (parsed)" in metadata_dict:
-        metadata_dict["Authors@R (parsed)"] = parse_authors(metadata_dict['Authors@R (parsed)'])
+        metadata_dict["Authors@R (parsed)"] = parse_authors_r(metadata_dict['Authors@R (parsed)'])
     
-    #TODO: add parsing for simple authors. Need to find a package that has this
+    if "Author" in metadata_dict:
+        metadata_dict["Author"] = parse_authors_complex(metadata_dict['Author'])
+    
+    if "Maintainer" in metadata_dict:
+        metadata_dict["Maintainer"] = parse_authors_simple(metadata_dict['Maintainer'])
     
     return metadata_dict
 
@@ -148,7 +219,7 @@ def import_data():
         # 2. Get metrics metadata from Biocondcutor
         REPO_URL = "https://git.bioconductor.org"
         package_names = download_and_extract_package_names(REPO_URL)
-        for package_name in package_names:
+        for package_name in package_names[200:210]:
             p = get_meta(REPO_URL, package_name)
             parsed_metadata = parse_metadata(p)
             if parsed_metadata:
@@ -164,7 +235,9 @@ def import_data():
                 }
 
                 document_w_metadata = add_metadata_to_entry(identifier, tool, alambique)
-                push_entry(document_w_metadata, alambique)
+                #push_entry(document_w_metadata, alambique)
+                pretty_log = json.dumps(parsed_metadata, indent=4)
+                print(pretty_log)
             
             else:
                     logging.warning(f"no soup - empty")
