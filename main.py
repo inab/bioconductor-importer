@@ -148,7 +148,7 @@ def import_data():
         # 2. Get metrics metadata from Biocondcutor
         REPO_URL = "https://git.bioconductor.org"
         package_names = download_and_extract_package_names(REPO_URL)
-        for package_name in package_names[500:510]:
+        for package_name in package_names:
             p = get_meta(REPO_URL, package_name)
             parsed_metadata = parse_metadata(p)
             if parsed_metadata:
