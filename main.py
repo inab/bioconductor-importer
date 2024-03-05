@@ -159,7 +159,7 @@ def import_data():
                 tool = {
                     'data': parsed_metadata,
                     '_id' : identifier,
-                    '@data_source' : 'sourceforge',
+                    '@data_source' : 'bioconductor',
                     '@source_url' : f"{REPO_URL}/packages/{name}",
                 }
 
