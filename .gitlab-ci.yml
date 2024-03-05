@@ -1,0 +1,39 @@
+image: python:3.9-alpine
+
+stages:
+  - main_task
+  - publish
+  
+run_metadata_import:
+  stage: main_task
+  script:
+    - pip install -r ./requirements.txt
+    - echo "⚙️ Running main task"
+    - python3 ./main.py -l DEBUG
+    - |
+      echo -e "\n\
+      ✨ Execution finished"
+  artifacts:
+    expire_in: 4 weeks
+  cache:
+    paths:
+      - .pip_cache/
+    key: "${CI_COMMIT_REF_SLUG}"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+  timeout: 4h
+
+build_and_push:
+  image: docker:latest
+  stage: publish
+  services:
+    - docker:dind
+  only:
+    - tags
+  script:
+    - docker login -u "$DOCKERHUB_USERNAME" -p "$DOCKERHUB_PASSWORD"
+    - docker build -t "$DOCKERHUB_USERNAME/opeb_tools_importer:$CI_COMMIT_TAG" -f Dockerfile .
+    - docker push "$DOCKERHUB_USERNAME/opeb_tools_importer:$CI_COMMIT_TAG"
+  after_script:
+    - docker logout
