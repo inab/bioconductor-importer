@@ -67,6 +67,7 @@ def parse_authors_complex(authors_str):
                 else:
                     if '<' in author:
                         items = author.split('<')
+                        # sometimes there are more than 2 items, usually a URL and email
                         if items and len(items) > 2:
                             if 'by' in author:
                                 author = author.split('by')[1]
