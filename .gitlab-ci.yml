@@ -1,5 +1,14 @@
 image: python:3.11-alpine
 
+before_script:
+  # Update and install system dependencies for R and tools for Python
+  - apt-get update && apt-get install -y r-base
+  # Install Python dependencies, including rpy2
+  - pip install rpy2
+  # Optional: Install additional R packages if required by your Python program
+  - R -e "install.packages(c('desc', 'utils'), repos='http://cran.rstudio.com/')"
+
+
 stages:
   - main_task
   - publish
