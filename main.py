@@ -152,14 +152,24 @@ def get_meta(REPO_URL: str, package_name: str):
     desc = importr('desc')
 
     # Read the DESCRIPTION file using desc
-    desc_obj = desc.desc(package_name)
-    string = desc_obj["print"]()
+    try:
+        desc_obj = desc.desc(package_name)
+    except Exception as e:
+        logging.warning(f"error - {package_name} - Could not get metadata - {e}")
+        return None
+    else:
+        string = desc_obj["print"]()
 
-    # Remove directory
-    remove_directory(package_name)
+        # Remove directory
+        remove_directory(package_name)
 
-    # Return the metadata
-    return str(string)
+        # Return the metadata
+        return str(string)
+
+    finally:
+        remove_directory(package_name)
+        return None
+
 
 def remove_ansi_color_codes(s: str):
     '''
@@ -262,24 +272,25 @@ def import_data():
         package_names = download_and_extract_package_names(REPO_URL)
         for package_name in package_names:
             p = get_meta(REPO_URL, package_name)
-            parsed_metadata = parse_metadata(p)
-            if parsed_metadata:
-                name = package_name
-                version = parsed_metadata.get('Version')
-                type_ = 'lib'
-                identifier = f"bioconductor/{name}/{type_}/{version}"
-                tool = {
-                    'data': parsed_metadata,
-                    '_id' : identifier,
-                    '@data_source' : 'bioconductor',
-                    '@source_url' : f"{REPO_URL}/packages/{name}",
-                }
+            if p:
+                parsed_metadata = parse_metadata(p)
+                if parsed_metadata:
+                    name = package_name
+                    version = parsed_metadata.get('Version')
+                    type_ = 'lib'
+                    identifier = f"bioconductor/{name}/{type_}/{version}"
+                    tool = {
+                        'data': parsed_metadata,
+                        '_id' : identifier,
+                        '@data_source' : 'bioconductor',
+                        '@source_url' : f"{REPO_URL}/packages/{name}",
+                    }
 
-                document_w_metadata = add_metadata_to_entry(identifier, tool, alambique)
-                push_entry(document_w_metadata, alambique)
-            
-            else:
-                    logging.warning(f"no soup - empty")
+                    document_w_metadata = add_metadata_to_entry(identifier, tool, alambique)
+                    push_entry(document_w_metadata, alambique)
+                
+                else:
+                        logging.warning(f"no soup - empty")
         
      
     except Exception as e:
