@@ -49,36 +49,53 @@ def parse_authors_complex(authors_str):
     # Normalize separators by replacing "and" with a comma for consistency
     # Assuming "and" is not part of any names or email addresses
     normalized_str = re.sub(r'\sand\s', ', ', authors_str)
+    normalized_str = normalized_str.replace('. ', ', ')
     authors_list = re.split(r',\s*', normalized_str)
     parsed_authors = []
 
     for author in authors_list:
         #count terms 
         l = len(author.split(' '))
-        # if there is an email
-        if '@' in author:
-            # only an email, no name
-            if l==1:
-                # Directly parse the author with an email
-                parsed_authors.append({"email": author})
-            # name and email
-            else:
-                if '<' in author:
-                    name, email = author.split('<')
-                    parsed_authors.append({"name": name.strip(), "email": email[:-1]})
-                # email not in <>
+        try:
+            # if there is an email
+            if '@' in author:
+                # only an email, no name
+                if l==1:
+                    # Directly parse the author with an email
+                    parsed_authors.append({"email": author})
+                # name and email
                 else:
-                    name = ''
-                    email = ''
-                    for item in author.split(' '):
-                        if '@' in item:
-                            email = item
+                    if '<' in author:
+                        items = author.split('<')
+                        if items and len(items) > 2:
+                            if 'by' in author:
+                                author = author.split('by')[1]
+                                name, email = author.split('<')
+                                parsed_authors.append({"name": name.strip(), "email": email[:-1]})
+                            elif 'from' in author:
+                                author = author.split('from')[1]
+                                name, email = author.split('<')
+                                parsed_authors.append({"name": name.strip(), "email": email[:-1]})
+                        
                         else:
-                            name += item + ' '
-                    parsed_authors.append({"name": name.strip(), "email": email})
-        else:
-            # For names without an explicit email, use the domain
-            parsed_authors.append({"name": author})
+                            name, email = author.split('<')
+                            parsed_authors.append({"name": name.strip(), "email": email[:-1]})
+                    # email not in <>
+                    else:
+                        name = ''
+                        email = ''
+                        for item in author.split(' '):
+                            if '@' in item:
+                                email = item
+                            else:
+                                name += item + ' '
+                        parsed_authors.append({"name": name.strip(), "email": email})
+            else:
+                # For names without an explicit email, use the domain
+                parsed_authors.append({"name": author})
+        except Exception as e:
+            parsed_authors.append({"other": author})
+            logging.warning(f"error - {author} - Could not parse author - {e}")
 
 
     return parsed_authors
@@ -108,6 +125,17 @@ def parse_authors_simple(authors_str):
 
     return authors
 
+def parse_list_comma(s: str):
+    '''
+    Parse a list of items separated by commas from a string
+    '''
+    return [item.strip() for item in s.split(',')]
+
+def parse_list_space(s: str):
+    '''
+    Parse a list of items separated by spaces from a string
+    '''
+    return [item.strip() for item in s.split()]
 
 def get_meta(REPO_URL: str, package_name: str):
     '''
@@ -180,6 +208,18 @@ def parse_metadata(metadata):
     
     if "Maintainer" in metadata_dict:
         metadata_dict["Maintainer"] = parse_authors_simple(metadata_dict['Maintainer'])
+
+    # Parse attributes that are lists of strings separated by commas
+    list_comma_attributes = ["Depends", "Imports", "LinkingTo", "Suggests", "Enhances", "License", "biocViews"]
+    for attribute in list_comma_attributes:
+        if attribute in metadata_dict:
+            metadata_dict[attribute] = parse_list_comma(metadata_dict[attribute])
+
+    # Parse attributes that are lists of strings separated by spaces
+    list_space_attributes = ["Collate"]
+    for attribute in list_space_attributes:
+        if attribute in metadata_dict:
+            metadata_dict[attribute] = parse_list_space(metadata_dict[attribute])
     
     return metadata_dict
 
@@ -219,7 +259,7 @@ def import_data():
         # 2. Get metrics metadata from Biocondcutor
         REPO_URL = "https://git.bioconductor.org"
         package_names = download_and_extract_package_names(REPO_URL)
-        for package_name in package_names[200:210]:
+        for package_name in package_names:
             p = get_meta(REPO_URL, package_name)
             parsed_metadata = parse_metadata(p)
             if parsed_metadata:
@@ -235,9 +275,7 @@ def import_data():
                 }
 
                 document_w_metadata = add_metadata_to_entry(identifier, tool, alambique)
-                #push_entry(document_w_metadata, alambique)
-                pretty_log = json.dumps(parsed_metadata, indent=4)
-                print(pretty_log)
+                push_entry(document_w_metadata, alambique)
             
             else:
                     logging.warning(f"no soup - empty")
