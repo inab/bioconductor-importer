@@ -166,10 +166,6 @@ def get_meta(REPO_URL: str, package_name: str):
         # Return the metadata
         return str(string)
 
-    finally:
-        remove_directory(package_name)
-        return None
-
 
 def remove_ansi_color_codes(s: str):
     '''
@@ -290,7 +286,7 @@ def import_data():
                     push_entry(document_w_metadata, alambique)
                 
                 else:
-                        logging.warning(f"no soup - empty")
+                        logging.warning(f"no parsed metadata - empty")
         
      
     except Exception as e:
