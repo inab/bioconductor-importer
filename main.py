@@ -153,13 +153,14 @@ def get_meta(REPO_URL: str, package_name: str):
 
     # Read the DESCRIPTION file using desc
     try:
+        # Any of the following two lines can fail
         desc_obj = desc.desc(package_name)
+        string = desc_obj["print"]()
+
     except Exception as e:
         logging.warning(f"error - {package_name} - Could not get metadata - {e}")
         return None
     else:
-        string = desc_obj["print"]()
-
         # Remove directory
         remove_directory(package_name)
 
