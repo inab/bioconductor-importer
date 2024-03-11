@@ -18,7 +18,7 @@ run_metadata_import:
   script:
     - pip install -r ./requirements.txt
     - echo "⚙️ Running main task"
-    - python3 ./main.py -l DEBUG
+    - python3 ./main.py -l INFO
     - |
       echo -e "\n\
       ✨ Execution finished"
@@ -31,7 +31,7 @@ run_metadata_import:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
     - if: '$CI_PIPELINE_SOURCE == "web"'
-  timeout: 4h
+  timeout: 10h
 
 build_and_push:
   image: docker:latest
