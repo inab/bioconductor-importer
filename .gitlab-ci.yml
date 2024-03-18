@@ -31,6 +31,7 @@ run_metadata_import:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
     - if: '$CI_PIPELINE_SOURCE == "web"'
+    - if: '$CI_PIPELINE_SOURCE == "pipeline"'
   timeout: 10h
 
 build_and_push:
