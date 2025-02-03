@@ -28,6 +28,31 @@ def download_and_extract_package_names(url):
         print(f"An error occurred while fetching the package list: {e}")
         return []
 
+
+def clone_repo_shallow(repo_url, package_name):
+    # Check if directory exists
+    if os.path.exists(package_name):
+        print('Package already cloned')
+        return
+    
+    package_repo = f"{repo_url}/packages/{package_name}"
+    clone_path = f"./{package_name}"
+
+    # Clone the repo without checking out files
+    repo = Repo.clone_from(package_repo, clone_path, no_checkout=True)
+    
+    # Enable sparse checkout
+    git = repo.git
+    git.sparse_checkout('init', '--cone')
+    
+    # Specify the files to include
+    git.sparse_checkout('set', 'DESCRIPTION', 'inst/CITATION')
+    
+    # Checkout the selected files
+    repo.git.checkout()
+    
+
+
 def clone_repo(repo_url, package_name):
     # check if directory exists:
     if os.path.exists(package_name):

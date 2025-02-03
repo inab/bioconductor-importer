@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "c705ca61ba651ea6221471acb97b1480dce9774fba8410ba530f584178e5fe57"
+            "sha256": "95301a43aadc638e34e0d577621cf28cfb7d90227b5ed75a58d39cf95e55e4c0"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -16,6 +16,13 @@
         ]
     },
     "default": {
+        "bibtexparser": {
+            "hashes": [
+                "sha256:a9c7ded64bc137720e4df0b1b7f12734edc1361185f1c9097048ff7c35af2b8f"
+            ],
+            "index": "pypi",
+            "version": "==1.4.3"
+        },
         "certifi": {
             "hashes": [
                 "sha256:0569859f95fc761b18b45ef421b1290a0f65f147e92a1e5eb3e635f9a5e4e66f",
@@ -378,6 +385,14 @@
             ],
             "index": "pypi",
             "version": "==4.6.2"
+        },
+        "pyparsing": {
+            "hashes": [
+                "sha256:506ff4f4386c4cec0590ec19e6302d3aedb992fdc02c761e90416f158dacf8e1",
+                "sha256:61980854fd66de3a90028d679a954d5f2623e83144b5afe5ee86f43d762e5f0a"
+            ],
+            "markers": "python_version >= '3.9'",
+            "version": "==3.2.1"
         },
         "python-dotenv": {
             "hashes": [

@@ -9,6 +9,7 @@ pymongo = "*"
 gitpython = "*"
 requests = "*"
 python-dotenv = "*"
+bibtexparser = "*"
 
 [dev-packages]
 

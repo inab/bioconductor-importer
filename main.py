@@ -1,12 +1,16 @@
 from rpy2.robjects.packages import importr
+import rpy2.robjects as ro
 import re
 import logging
 import argparse
 import sys
 import json
+import os
+from typing import Dict, List
+
 from dotenv import load_dotenv
 
-from bioconductor_repo import download_and_extract_package_names, clone_repo, directory_contents, remove_directory
+from bioconductor_repo import download_and_extract_package_names, clone_repo, directory_contents, remove_directory, clone_repo_shallow
 from utils import push_entry, connect_db, add_metadata_to_entry
 
 
@@ -138,16 +142,45 @@ def parse_list_space(s: str):
     '''
     return [item.strip() for item in s.split()]
 
-def get_meta(REPO_URL: str, package_name: str):
+def get_citation_path(package_name: str):
+    '''
+    Get the path to the CITATION file of a package
+    - package_name: name of the package
+    '''
+    path = f"./{package_name}/inst/CITATION"
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as file:
+            lines = file.readlines()
+        return lines
+    return None
+
+
+def get_files(REPO_URL: str, package_name: str):
+    try:
+        utils = importr('utils')
+        # Clone the repo
+        clone_repo_shallow(REPO_URL, package_name)
+
+        meta = get_meta(package_name)
+
+        citation_lines = get_citation_path(package_name)
+
+        # Remove directory
+        remove_directory(package_name)
+    except Exception as e:
+        logging.warning(f"error - {package_name} - Could not get files - {e}")
+        return None, None
+    
+    else: 
+        return meta, citation_lines
+
+
+def get_meta(package_name: str):
     '''
     Gets the metadata of a package from Bioconductor
     - REPO_URL: URL of the Bioconductor repository
     - package_name: name of the package
     '''
-    utils = importr('utils')
-    # Clone the repo
-    clone_repo(REPO_URL, package_name)
-    
     # Import the desc package
     desc = importr('desc')
 
@@ -160,11 +193,8 @@ def get_meta(REPO_URL: str, package_name: str):
     except Exception as e:
         logging.warning(f"error - {package_name} - Could not get metadata - {e}")
         return None
-    else:
-        # Remove directory
-        remove_directory(package_name)
 
-        # Return the metadata
+    else:
         return str(string)
 
 
@@ -199,9 +229,115 @@ def build_dictionary(metadata: str):
     return parsed_data
 
 
-def parse_metadata(metadata):
+def clean_text(text: str) -> str:
+    """
+    Cleans a string by removing:
+    - Leading and trailing quotes (")
+    - Leading '{' and trailing '}'
+    - Leading and trailing commas (',')
+    - Fixes cases like '{, }' and '", "'
+
+    Args:
+        text (str): The input string.
+
+    Returns:
+        str: The cleaned string.
+    """
+    if not text:
+        return text  # Return empty or None as-is
+
+    # Remove leading and trailing quotes
+    text = text.strip('"')
+
+    # Remove leading '{' and trailing '}'
+    text = text.lstrip("{").rstrip("}")
+
+    # Remove leading and trailing commas
+    text = text.strip(",")
+
+    # Remove leading and trailing quotes
+    text = text.strip('"')
+
+    # Fix patterns like "{, }" or "{ , }" → empty string
+    text = re.sub(r"^\{\s*,?\s*\}$", "", text)
+
+    return text.strip()  # Ensure no unwanted spaces remain
+
+
+
+def parse_citation_file(citation_lines: List) -> List[Dict]:
+    """
+    Parses a list of lines from an R CITATION file using R.
+
+    Args:
+        citation_lines (List[str]): List of lines from the CITATION file.
+
+    Returns:
+        List[Dict]: A list of dictionaries containing citation details.
+    """
+    try:
+        article = False
+        publications = []
+        new_pub = {}
+        for line in citation_lines:
+            if 'entry' in line:
+                if new_pub:
+                    publications.append(new_pub)
+                    new_pub = {}
+            
+                # new entry
+                if 'entry="article"' in line:
+                    new_pub = {}
+                    article = True
+                else:
+                    article = False
+            
+            elif article:
+                if '=' in line:
+                    last_key = ''
+                    # Parse the line
+                    if 'title' in line:                        
+                        new_pub['title'] = clean_text(line.split('title = ')[1].strip())
+                        last_key = 'title'
+                    elif 'journal' in line:
+                        new_pub['journal'] = clean_text(line.split('journal = ')[1].strip())
+                        last_key = 'journal'
+                    elif 'doi' in line:
+                        new_pub['doi'] = clean_text(line.split('doi = ')[1].strip())
+                        last_key = 'doi'
+                    elif 'year' in line:
+                        new_pub['year'] = clean_text(line.split('year = ')[1].strip())
+                        last_key = 'year'
+                    elif 'url' in line:
+                        new_pub['url'] = clean_text(line.split('url = ')[1].strip())
+                        last_key = 'url'
+                elif last_key:
+                    new_pub[last_key] += clean_text(line.strip())
+
+        if new_pub:
+            publications.append(new_pub)
+
+        return publications
+
+    except Exception as e:
+        logging.error(f"Error parsing CITATION content: {str(e)}")
+        return []
+
+
+
+def parse_metadata(raw_metadata, citation_lines):
+    parsed_metadata = parse_description(raw_metadata)
+    if citation_lines:
+        parsed_metadata['publication'] = parse_citation_file(citation_lines)
+        logging.info(f"publications - {parsed_metadata['publication']}")
+
+    return parsed_metadata
+
+
+
+def parse_description(metadata):
     '''
-    Parses the DESCRIOTION string into a dictionary, and then parses the authors, 
+    Parses the DESCRIPTION string into a dictionary, and then parses the authors, 
     which require special parsing functions
     - metadata: DESCRIPTION file as a string
     '''
@@ -229,6 +365,7 @@ def parse_metadata(metadata):
         if attribute in metadata_dict:
             metadata_dict[attribute] = parse_list_space(metadata_dict[attribute])
     
+
     return metadata_dict
 
 
@@ -268,9 +405,9 @@ def import_data():
         REPO_URL = "https://git.bioconductor.org"
         package_names = download_and_extract_package_names(REPO_URL)
         for package_name in package_names:
-            p = get_meta(REPO_URL, package_name)
-            if p:
-                parsed_metadata = parse_metadata(p)
+            description, citation_lines = get_files(REPO_URL, package_name)
+            if description:
+                parsed_metadata = parse_metadata(description, citation_lines)
                 if parsed_metadata:
                     name = package_name
                     version = parsed_metadata.get('Version')
