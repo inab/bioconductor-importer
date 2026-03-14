@@ -2,30 +2,43 @@ from git import Repo
 import os
 import requests
 import shutil
+import logging
+
+logger = logging.getLogger(__name__)
+
 def download_and_extract_package_names(url):
+    package_names = []
+
     try:
-        # Send a GET request to the URL
-        response = requests.get(url)
-        # Raise an exception if the request was unsuccessful
-        response.raise_for_status()
+        logger.info(f"Requesting package list from {url}")
 
-        # Extract lines from the response content
-        lines = response.text.split('\n')
+        with requests.get(
+            url,
+            stream=True,
+            timeout=(10, 60),
+            headers={"User-Agent": "bioconductor-importer/1.0"}
+        ) as response:
+            logger.info(f"Received response: {response.status_code} from {response.url}")
+            response.raise_for_status()
 
-        # List to hold extracted package names
-        package_names = []
+            content_type = response.headers.get("Content-Type", "")
+            logger.info(f"Content-Type: {content_type}")
 
-        # Iterate through each line to find package names
-        for line in lines:
-            # Check if the line contains a package name
-            if line.strip().startswith('R  \tpackages/'):
-                # Extract the package name and add it to the list
-                package_name = line.strip().split('/')[-1]
-                package_names.append(package_name)
+            for line in response.iter_lines(decode_unicode=True):
+                if not line:
+                    continue
+                if line.startswith("R  \tpackages/"):
+                    package_name = line.split("/")[-1].strip()
+                    package_names.append(package_name)
 
+        logger.info(f"Extracted {len(package_names)} package names")
         return package_names
+
+    except requests.Timeout:
+        logger.exception(f"Timeout while fetching package list from {url}")
+        return []
     except requests.RequestException as e:
-        print(f"An error occurred while fetching the package list: {e}")
+        logger.exception(f"Error while fetching package list from {url}: {e}")
         return []
 
 
