@@ -35,13 +35,3 @@ This program is a metadata importer for Bioconductor packages. It provides a set
 | MONGO_DB         |  Name of database where output will be pushed |   `observatory`      |  |
 | ALAMBIQUE |  Name of database where output will be pushed  |   `alambique`        |  |
 
-## CI/CD
-
-This repository is integrated with GitLab CI/CD. The pipeline is defined in `.gitlab-ci.yml`. It is composed of the following stages:
-
-| Stage | Description | Runs |
-|-------|-------------|------|
-| `prepare` | Pulls bioconda recipes. It is necessary for both testing and data importation | Always |
-| `test` | Runs the tests | Always |
-| `main_task` | Data importation | Manually or on schedule |
-
