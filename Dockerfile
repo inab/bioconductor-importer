@@ -1,7 +1,10 @@
 FROM python:3.9-alpine
 
-COPY . ./
+WORKDIR /app
 
-RUN pip3 install -r ./requirements.txt
+COPY requirements.txt .
+RUN python -m pip install --no-cache-dir -r requirements.txt
 
-CMD python3 ./main.py -l=DEBUG
+COPY . .
+
+CMD ["python", "main.py", "-l=DEBUG"]
