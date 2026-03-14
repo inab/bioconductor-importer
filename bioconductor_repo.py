@@ -1,103 +1,166 @@
-from git import Repo
-import os
-import requests
-import shutil
+from __future__ import annotations
+
 import logging
+import os
+import shutil
+import subprocess
+from pathlib import Path
+from typing import List
+
+import requests
 
 logger = logging.getLogger(__name__)
 
-def download_and_extract_package_names(url):
+
+def download_and_extract_package_names(url: str) -> List[str]:
+    """
+    # WARNING:
+    # Package names are currently extracted by scraping the root response of
+    # https://git.bioconductor.org. This is brittle: the response format may change
+    # without notice because it is not a documented stable API. If that happens,
+    # this function may return incomplete results or no packages at all.
+    # TODO: replace this with a stable Bioconductor package index or official API.
+
+    Download the package listing and extract package names.
+    """
     package_names = []
 
     try:
-        logger.info(f"Requesting package list from {url}")
+        logger.info("Requesting package list from %s", url)
 
         with requests.get(
             url,
             stream=True,
             timeout=(10, 60),
-            headers={"User-Agent": "bioconductor-importer/1.0"}
+            headers={"User-Agent": "bioconductor-importer/1.0"},
         ) as response:
-            logger.info(f"Received response: {response.status_code} from {response.url}")
+            logger.info(
+                "Package list response: status=%s final_url=%s content_type=%s content_length=%s",
+                response.status_code,
+                response.url,
+                response.headers.get("Content-Type"),
+                response.headers.get("Content-Length"),
+            )
             response.raise_for_status()
 
-            content_type = response.headers.get("Content-Type", "")
-            logger.info(f"Content-Type: {content_type}")
-
-            for line in response.iter_lines(decode_unicode=True):
-                if not line:
+            for raw_line in response.iter_lines(decode_unicode=True):
+                if not raw_line:
                     continue
+
+                line = raw_line.strip()
                 if line.startswith("R  \tpackages/"):
                     package_name = line.split("/")[-1].strip()
-                    package_names.append(package_name)
+                    if package_name:
+                        package_names.append(package_name)
 
-        logger.info(f"Extracted {len(package_names)} package names")
+        logger.info("Extracted %d package names", len(package_names))
         return package_names
 
     except requests.Timeout:
-        logger.exception(f"Timeout while fetching package list from {url}")
+        logger.exception("Timeout while fetching package list from %s", url)
         return []
-    except requests.RequestException as e:
-        logger.exception(f"Error while fetching package list from {url}: {e}")
+    except requests.RequestException:
+        logger.exception("Error while fetching package list from %s", url)
         return []
 
 
-def clone_repo_shallow(repo_url, package_name):
-    # Check if directory exists
-    if os.path.exists(package_name):
-        print('Package already cloned')
-        return
-    
+def clone_repo_shallow(repo_url: str, package_name: str, timeout: int = 180) -> None:
+    """
+    Shallow clone a package repo and sparse-checkout only DESCRIPTION and inst/CITATION.
+    """
+    clone_path = Path(package_name)
+
+    if clone_path.exists():
+        logger.warning("Directory already exists for package %s, removing it first", package_name)
+        remove_directory(str(clone_path))
+
     package_repo = f"{repo_url}/packages/{package_name}"
-    clone_path = f"./{package_name}"
+    env = os.environ.copy()
+    env["GIT_TERMINAL_PROMPT"] = "0"
 
-    # Clone the repo without checking out files
-    repo = Repo.clone_from(package_repo, clone_path, no_checkout=True)
-    
-    # Enable sparse checkout
-    git = repo.git
-    git.sparse_checkout('init', '--cone')
-    
-    # Specify the files to include
-    git.sparse_checkout('set', 'DESCRIPTION', 'inst/CITATION')
-    
-    # Checkout the selected files
-    repo.git.checkout()
-    
+    commands = [
+        ["git", "clone", "--depth", "1", "--no-checkout", package_repo, str(clone_path)],
+        ["git", "-C", str(clone_path), "sparse-checkout", "init", "--cone"],
+        ["git", "-C", str(clone_path), "sparse-checkout", "set", "DESCRIPTION", "inst/CITATION"],
+        ["git", "-C", str(clone_path), "checkout"],
+    ]
+
+    for cmd in commands:
+        logger.info("Running command for %s: %s", package_name, " ".join(cmd))
+        result = subprocess.run(
+            cmd,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+
+        if result.stdout:
+            logger.debug("stdout [%s]: %s", package_name, result.stdout.strip())
+        if result.stderr:
+            logger.debug("stderr [%s]: %s", package_name, result.stderr.strip())
+
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"Git command failed for {package_name}: {' '.join(cmd)}\n"
+                f"Return code: {result.returncode}\n"
+                f"stderr: {result.stderr.strip()}"
+            )
 
 
-def clone_repo(repo_url, package_name):
-    # check if directory exists:
-    if os.path.exists(package_name):
-      print('Package alerady cloned')
-      return
+def clone_repo(repo_url: str, package_name: str, timeout: int = 300) -> None:
+    """
+    Full clone with timeout.
+    """
+    clone_path = Path(package_name)
+
+    if clone_path.exists():
+        logger.warning("Directory already exists for package %s, removing it first", package_name)
+        remove_directory(str(clone_path))
+
+    package_repo = f"{repo_url}/packages/{package_name}"
+    env = os.environ.copy()
+    env["GIT_TERMINAL_PROMPT"] = "0"
+
+    cmd = ["git", "clone", package_repo, str(clone_path)]
+    logger.info("Running command for %s: %s", package_name, " ".join(cmd))
+
+    result = subprocess.run(
+        cmd,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=False,
+    )
+
+    if result.stdout:
+        logger.debug("stdout [%s]: %s", package_name, result.stdout.strip())
+    if result.stderr:
+        logger.debug("stderr [%s]: %s", package_name, result.stderr.strip())
+
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"Git clone failed for {package_name}\n"
+            f"Return code: {result.returncode}\n"
+            f"stderr: {result.stderr.strip()}"
+        )
+
+
+def directory_contents(directory_path: str):
+    path = Path(directory_path)
+    if path.is_dir():
+        return [p.name for p in path.iterdir()]
+
+    logger.warning("The path %s is not a directory or does not exist", directory_path)
+    return None
+
+
+def remove_directory(directory_path: str) -> None:
+    path = Path(directory_path)
+    if path.exists():
+        shutil.rmtree(path)
+        logger.info("Removed directory '%s'", directory_path)
     else:
-      package_repo = f"{repo_url}/packages/{package_name}"
-      clone_path = f"./{package_name}"
-      Repo.clone_from(package_repo, clone_path)
-
-def directory_contents(directory_path):
-    # Check if the specified path is indeed a directory
-    if os.path.isdir(directory_path):
-        # List all files and subdirectories in the directory
-        contents = os.listdir(directory_path)
-        return contents
-
-    else:
-        print(f"The path {directory_path} is not a directory or does not exist.")
-        return None
-
-def remove_directory(directory_path):
-    # Check if the directory exists
-    if os.path.exists(directory_path):
-        # Remove the directory and all its contents
-        shutil.rmtree(directory_path)
-        print(f"The directory '{directory_path}' has been removed successfully.")
-    else:
-        print(f"The directory '{directory_path}' does not exist.")
-
-
-
-
-
-
+        logger.debug("Directory '%s' does not exist", directory_path)
