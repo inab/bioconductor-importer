@@ -185,10 +185,9 @@ def get_meta(package_name: str):
     Gets the metadata of a package from Bioconductor
     """
     desc = importr("desc")
-    logging.debug("desc_obj type: %s", type(desc_obj))
-
     try:
         desc_obj = desc.desc(package_name)
+        logging.debug("desc_obj type: %s", type(desc_obj))
         string = desc_obj["print"]()
     except Exception as e:
         logging.warning(f"error - {package_name} - Could not get metadata - {e}")
