@@ -180,18 +180,21 @@ def init_r_dependencies() -> None:
     logger.info("R dependencies initialized")
 
 
-def get_meta(package_dir: str) -> Optional[str]:
+def get_meta(package_name: str):
     """
-    Read DESCRIPTION metadata through the R 'desc' package.
+    Gets the metadata of a package from Bioconductor
     """
+    desc = importr("desc")
+    logging.debug("desc_obj type: %s", type(desc_obj))
+
     try:
-        desc = importr("desc")
-        desc_obj = desc.desc(package_dir)
-        string = desc_obj.rx2("print")()
-        return str(string)
+        desc_obj = desc.desc(package_name)
+        string = desc_obj["print"]()
     except Exception as e:
-        logger.warning("Could not get metadata for '%s': %s", package_dir, e)
+        logging.warning(f"error - {package_name} - Could not get metadata - {e}")
         return None
+    else:
+        return str(string)
 
 
 def get_files(repo_url: str, package_name: str) -> Tuple[Optional[str], Optional[List[str]]]:
